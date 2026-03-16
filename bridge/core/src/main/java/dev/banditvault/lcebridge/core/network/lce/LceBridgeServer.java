@@ -33,8 +33,6 @@ public class LceBridgeServer {
         bossGroup   = new NioEventLoopGroup(1);
         workerGroup = new NioEventLoopGroup();
 
-        LceChannelHandler sharedHandler = new LceChannelHandler(config);
-
         ServerBootstrap b = new ServerBootstrap();
         b.group(bossGroup, workerGroup)
          .channel(NioServerSocketChannel.class)
@@ -46,7 +44,7 @@ public class LceBridgeServer {
                  ChannelPipeline p = ch.pipeline();
                  p.addLast("decoder", new LcePacketDecoder());
                  p.addLast("encoder", new LcePacketEncoder());
-                 p.addLast("handler", sharedHandler);
+                 p.addLast("handler", new LceChannelHandler(config)); // fresh per connection
              }
          });
 

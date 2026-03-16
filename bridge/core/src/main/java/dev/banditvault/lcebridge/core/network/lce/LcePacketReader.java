@@ -27,7 +27,7 @@ public class LcePacketReader {
             case PlayerAbilitiesPacket.ID-> readPlayerAbilities(r);
             case DisconnectPacket.ID     -> readDisconnect(r);
             default -> {
-                log.debug("Unhandled LCE packet id={} ({} bytes remaining)", id, payload.readableBytes());
+                log.info("Unhandled LCE packet id={} ({} bytes remaining)", id, payload.readableBytes());
                 yield null;
             }
         };

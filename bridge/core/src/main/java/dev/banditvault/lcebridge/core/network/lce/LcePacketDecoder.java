@@ -26,6 +26,8 @@ public class LcePacketDecoder extends ByteToMessageDecoder {
         in.markReaderIndex();
         int length = in.readInt();
 
+        log.info("Decoder: got {} readable bytes, length prefix = {}", in.readableBytes() + 4, length);
+
         if (length <= 0 || length > 2_097_152) { // 2 MB sanity limit
             log.warn("Invalid LCE packet length: {}, closing connection", length);
             ctx.close();
@@ -40,12 +42,16 @@ public class LcePacketDecoder extends ByteToMessageDecoder {
 
         ByteBuf payload = in.readBytes(length);
         try {
+            int peekId = payload.getUnsignedByte(0);
+            log.info("Decoder: reading packet id={} length={}", peekId, length);
             LcePacket pkt = LcePacketReader.read(payload);
             if (pkt != null) {
                 out.add(pkt);
+            } else {
+                log.info("Decoder: packet id={} returned null from reader", peekId);
             }
         } catch (Exception e) {
-            log.warn("Error decoding LCE packet: {}", e.getMessage());
+            log.warn("Error decoding LCE packet: {}", e.getMessage(), e);
         } finally {
             payload.release();
         }

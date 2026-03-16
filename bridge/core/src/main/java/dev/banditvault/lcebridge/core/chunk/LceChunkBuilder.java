@@ -30,7 +30,6 @@ public final class LceChunkBuilder {
     }
 
     public void setSkyLight(int x, int y, int z, int level) {
-        blockIds[x * 256 * 16 + z * 256 + y] = (byte) level; // reuse slot trick
         skyLight[x * 256 * 16 + z * 256 + y] = (byte) level;
     }
 

@@ -1,0 +1,12 @@
+[
+  { "javaStateId": 0,  "lceId": 0, "lceData": 0 },
+  { "javaStateId": 1,  "lceId": 1, "lceData": 0 },
+  { "javaStateId": 2,  "lceId": 1, "lceData": 0 },
+  { "javaStateId": 3,  "lceId": 1, "lceData": 0 },
+  { "javaStateId": 4,  "lceId": 1, "lceData": 0 },
+  { "javaStateId": 16, "lceId": 1, "lceData": 0 },
+  { "javaStateId": 32, "lceId": 2, "lceData": 0 },
+  { "javaStateId": 33, "lceId": 2, "lceData": 0 },
+  { "javaStateId": 48, "lceId": 3, "lceData": 0 },
+  { "javaStateId": 64, "lceId": 4, "lceData": 0 }
+]

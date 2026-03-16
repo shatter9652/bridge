@@ -19,10 +19,31 @@ public class BridgeMain {
     private static final Logger log = LoggerFactory.getLogger(BridgeMain.class);
 
     public static void main(String[] args) throws Exception {
+        // Catch any uncaught exceptions on any thread and log them properly
+        Thread.setDefaultUncaughtExceptionHandler((t, e) ->
+            log.error("Uncaught exception on thread {}", t.getName(), e));
+
         log.info("=== LCEBridge v0.1.0 starting ===");
 
-        // 1. Locate / extract config.yml
-        File configFile = args.length > 0 ? new File(args[0]) : new File("config.yml");
+        // Config search order:
+        // 1. Path passed as argument
+        // 2. Next to the JAR file
+        // 3. Current working directory
+        File configFile;
+        if (args.length > 0) {
+            configFile = new File(args[0]);
+        } else {
+            // Try to find the JAR's own directory first
+            File jarDir = getJarDir();
+            File nextToJar = jarDir != null ? new File(jarDir, "config.yml") : null;
+            File cwd = new File("config.yml");
+            if (nextToJar != null && nextToJar.exists()) {
+                configFile = nextToJar;
+            } else {
+                configFile = cwd; // fall back to cwd (also used for extraction)
+            }
+        }
+        log.info("Config file: {}", configFile.getAbsolutePath());
         if (!configFile.exists()) {
             extractDefaultConfig(configFile);
         }
@@ -48,7 +69,22 @@ public class BridgeMain {
         log.info("LCEBridge ready — connect your LCE client to port {}", config.lcePort);
     }
 
-    /** Copy the bundled config.yml from JAR resources to the working directory. */
+    /** Returns the directory containing the running JAR, or null if it can't be determined. */
+    private static File getJarDir() {
+        try {
+            java.net.URI uri = BridgeMain.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI();
+            File jar = new File(uri);
+            return jar.isFile() ? jar.getParentFile() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Copy the bundled config.yml from JAR resources to the target path. */
     private static void extractDefaultConfig(File target) {
         try (InputStream in = BridgeMain.class.getResourceAsStream("/config.yml")) {
             if (in == null) { log.warn("No bundled config.yml found"); return; }

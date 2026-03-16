@@ -9,8 +9,8 @@ import org.slf4j.LoggerFactory;
 /**
  * One instance per accepted LCE connection.
  * Bridges inbound LcePackets → LceBridgeSession.handleLcePacket().
+ * NOT @Sharable — each channel gets its own instance.
  */
-@ChannelHandler.Sharable
 public class LceChannelHandler extends SimpleChannelInboundHandler<LcePacket> {
     private static final Logger log = LoggerFactory.getLogger(LceChannelHandler.class);
 
