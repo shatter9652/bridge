@@ -59,20 +59,41 @@ namespace LCEServer
         // P2: snapshot last-broadcast position for delta calculations
         void  GetLastSentPos(double& x, double& y, double& z) const
             { x = m_lastSentX; y = m_lastSentY; z = m_lastSentZ; }
+        void  GetLastSentRot(float& yRot, float& xRot) const
+            { yRot = m_lastSentYRot; xRot = m_lastSentXRot; }
+        // Updates both float and integer fixed-point snapshots.
+        // Fixed-point (floor(x*32)) matches TrackedEntity::xp in the source and
+        // stays exactly in sync with the client's integer delta accumulator.
         void  SetLastSentPos(double x, double y, double z,
                              float yRot, float xRot)
         {
             m_lastSentX = x; m_lastSentY = y; m_lastSentZ = z;
             m_lastSentYRot = yRot; m_lastSentXRot = xRot;
+            m_lastSentXFixed = (int32_t)std::floor(x    * 32.0);
+            m_lastSentYFixed = (int32_t)std::floor(y    * 32.0);
+            m_lastSentZFixed = (int32_t)std::floor(z    * 32.0);
+            m_lastSentYRotFixed = (int32_t)std::floor(yRot * 256.0f / 360.0f);
+            m_lastSentXRotFixed = (int32_t)std::floor(xRot * 256.0f / 360.0f);
             m_lastSentValid = true;
         }
+        // Integer fixed-point getters — used for computing movement packet deltas.
+        void  GetLastSentPosFixed(int32_t& xf, int32_t& yf, int32_t& zf) const
+            { xf = m_lastSentXFixed; yf = m_lastSentYFixed; zf = m_lastSentZFixed; }
+        void  GetLastSentRotFixed(int32_t& yrf, int32_t& xrf) const
+            { yrf = m_lastSentYRotFixed; xrf = m_lastSentXRotFixed; }
         bool  IsLastSentValid() const { return m_lastSentValid; }
+        bool  HasChunkVisible(int chunkX, int chunkZ) const
+        {
+            return m_visibleChunks.find(MakeChunkKey(chunkX, chunkZ)) !=
+                m_visibleChunks.end();
+        }
 
         // Health / game state
         float GetHealth() const { return m_health; }
         bool  IsDead() const    { return m_isDead; }
         int   GetEntityId() const { return m_entityId; }
         int   GetGameMode() const { return m_gameMode; }
+        void  SetGameMode(int mode) { m_gameMode = mode; }
         void  ApplyDamage(float amount);
 
         // Send SetHealth to this client
@@ -170,10 +191,14 @@ namespace LCEServer
         int                 m_chunkRadius = 4; // set from config on construction
 
         // P2: last position/rotation broadcast to other players.
-        // Used to compute relative deltas (EntityMove/MoveLook)
-        // vs absolute teleport (EntityTeleport) when > 4 blocks.
+        // Float values used for AddPlayer/teleport absolute position.
+        // Integer fixed-point values (floor(x*32), matching TrackedEntity::xp)
+        // are used for delta computation to stay in sync with the client's
+        // integer accumulator (client does e->xp += packet->xa, x = xp/32.0).
         double              m_lastSentX = 0, m_lastSentY = 0, m_lastSentZ = 0;
         float               m_lastSentYRot = 0, m_lastSentXRot = 0;
+        int32_t             m_lastSentXFixed = 0, m_lastSentYFixed = 0, m_lastSentZFixed = 0;
+        int32_t             m_lastSentYRotFixed = 0, m_lastSentXRotFixed = 0;
         bool                m_lastSentValid = false; // false until first move broadcast
         std::unordered_set<int64_t> m_visibleChunks;
 

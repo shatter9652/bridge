@@ -3,3 +3,4 @@ build/
 dist/
 CHANGES.md
 PACKETS.md
+build.bat

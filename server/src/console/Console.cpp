@@ -318,6 +318,9 @@ namespace LCEServer
             PacketHandler::WritePlayerAbilities(
                 creative, false, creative, creative,
                 0.05f, 0.1f));
+        // Update server-side gamemode so HandlePlayerAction uses the
+        // correct break logic: creative=instant on START, survival=STOP only
+        player->SetGameMode(mode);
         Logger::Info("Console",
             "Set %s's gamemode to %d",
             args[2].c_str(), mode);

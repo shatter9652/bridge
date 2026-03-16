@@ -119,6 +119,14 @@ namespace LCEServer
         // Shutdown sequence
         Logger::Info("Server", "Shutting down...");
 
+        // Persist world state before network/console teardown. If shutdown
+        // gets interrupted later, player edits are still on disk.
+        if (m_world && !m_config.disableSaving) {
+            Logger::Info("Server", "Saving world...");
+            m_world->SaveAll();
+            Logger::Info("Server", "World save complete.");
+        }
+
         if (m_console) {
             m_console->Stop();
             m_console.reset();
@@ -130,10 +138,6 @@ namespace LCEServer
         if (m_tcp) {
             m_tcp->Shutdown();
             m_tcp.reset();
-        }
-        if (m_world && !m_config.disableSaving) {
-            Logger::Info("Server", "Saving world...");
-            m_world->SaveAll();
         }
         m_saveMgr.reset();
         m_world.reset();

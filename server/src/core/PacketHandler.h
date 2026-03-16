@@ -31,6 +31,15 @@ namespace LCEServer
             writeInt((int32_t)(v >> 32));
             writeInt((int32_t)(v & 0xFFFFFFFF));
         }
+        void writeFloat(float v) {
+            // IEEE 754 big-endian — matches DataOutputStream::writeFloat
+            uint32_t bits;
+            std::memcpy(&bits, &v, sizeof(bits));
+            writeByte((uint8_t)((bits >> 24) & 0xFF));
+            writeByte((uint8_t)((bits >> 16) & 0xFF));
+            writeByte((uint8_t)((bits >>  8) & 0xFF));
+            writeByte((uint8_t)( bits        & 0xFF));
+        }
         void writePlayerUID(PlayerUID v) { writeLong((int64_t)v); }
         // Packet::writeUtf: short length + wchar_t chars (2 bytes each, BE)
         void writeUtf(const std::wstring& s) {
@@ -385,25 +394,27 @@ namespace LCEServer
 
         // --- P2: Entity movement broadcasting ---
 
-        // EntityMovePacket (id=31) — relative position delta only
-        // Wire: [byte 31][int entityId][byte dx*32][byte dy*32][byte dz*32]
+        // EntityMovePacket::Pos (id=31) — relative position delta only
+        // xa/ya/za are pre-computed integer deltas (floor(newPos*32) - floor(oldPos*32)),
+        // matching TrackedEntity's integer fixed-point delta computation in the source.
+        // Wire: [byte 31][short entityId][byte xa][byte ya][byte za]
         static std::vector<uint8_t> WriteEntityMove(
-            int entityId, double dx, double dy, double dz);
+            int entityId, int8_t xa, int8_t ya, int8_t za);
 
-        // EntityMoveLookPacket (id=32) — relative pos + rotation
-        // Wire: [byte 32][int entityId][byte dx*32][byte dy*32][byte dz*32]
-        //       [byte yRot/360*256][byte xRot/360*256]
+        // EntityMovePacket::PosRot (id=33) — relative pos + rotation
+        // Wire: [byte 33][short entityId][byte xa][byte ya][byte za]
+        //       [byte yRotDelta][byte xRotDelta]
         static std::vector<uint8_t> WriteEntityMoveLook(
-            int entityId, double dx, double dy, double dz,
-            float yRot, float xRot);
+            int entityId, int8_t xa, int8_t ya, int8_t za,
+            int8_t yRotDelta, int8_t xRotDelta);
 
-        // EntityLookPacket (id=33) — rotation only
-        // Wire: [byte 33][int entityId][byte yRot/360*256][byte xRot/360*256]
+        // EntityMovePacket::Rot (id=32) — rotation only
+        // Wire: [byte 32][short entityId][byte yRotDelta][byte xRotDelta]
         static std::vector<uint8_t> WriteEntityLook(
-            int entityId, float yRot, float xRot);
+            int entityId, int8_t yRotDelta, int8_t xRotDelta);
 
         // EntityTeleportPacket (id=34) — absolute position + rotation
-        // Wire: [byte 34][int entityId][int x*32][int y*32][int z*32]
+        // Wire: [byte 34][short entityId][int x*32][int y*32][int z*32]
         //       [byte yRot/360*256][byte xRot/360*256]
         static std::vector<uint8_t> WriteEntityTeleport(
             int entityId, double x, double y, double z,

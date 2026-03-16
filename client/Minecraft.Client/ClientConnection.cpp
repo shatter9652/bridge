@@ -1291,9 +1291,18 @@ void ClientConnection::handleTileUpdate(shared_ptr<TileUpdatePacket> packet)
 	}
 	// 4J - changed to encode level in packet
 	MultiPlayerLevel *dimensionLevel = (MultiPlayerLevel *)minecraft->levels[packet->levelIdx];
+	// Be tolerant of malformed/late level index and fall back to the active level.
+	if( !dimensionLevel )
+	{
+		dimensionLevel = (MultiPlayerLevel *)minecraft->level;
+	}
 	if( dimensionLevel )
 	{
 		PIXBeginNamedEvent(0,"Handle tile update");
+
+		// Ensure the destination chunk exists before applying the tile update.
+		// Chunk visibility packets can race with tile updates during join/stream.
+		dimensionLevel->setChunkVisible(packet->x >> 4, packet->z >> 4, true);
 
 		if( g_NetworkManager.IsHost() )
 		{
@@ -1322,6 +1331,10 @@ void ClientConnection::handleTileUpdate(shared_ptr<TileUpdatePacket> packet)
 		bool tileWasSet = dimensionLevel->doSetTileAndData(packet->x, packet->y, packet->z, packet->block, packet->data);
 
 		PIXEndNamedEvent();
+
+		// Force renderer refresh for this tile even if the underlying set path
+		// considered the value unchanged due prediction/shared data timing.
+		dimensionLevel->setTilesDirty(packet->x, packet->y, packet->z, packet->x, packet->y, packet->z);
 
 		// 4J - remove any tite entities in this region which are associated with a tile that is now no longer a tile entity. Without doing this we end up with stray
 		// tile entities kicking round, which leads to a bug where chests can't be properly placed again in a location after (say) a chest being removed by TNT

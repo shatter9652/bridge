@@ -1,0 +1,9 @@
+.gradle/
+build/
+out/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+dumps/
+*.log
+config.yml.bak

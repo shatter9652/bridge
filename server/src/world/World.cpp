@@ -2824,9 +2824,8 @@ namespace LCEServer
 
         SaveLevelDat();
 
-        if (dirtyCount > 0)
-            Logger::Info("World", "Saved %d chunks + level.dat",
-                         dirtyCount);
+        Logger::Info("World", "Saved %d chunks + level.dat",
+                     dirtyCount);
     }
 
     // ---------------------------------------------------------------

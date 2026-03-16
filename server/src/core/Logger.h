@@ -16,6 +16,9 @@ namespace LCEServer
     class Logger
     {
     public:
+        static void Initialize();
+        static void Shutdown();
+
         static void SetLevel(LogLevel level);
         static LogLevel GetLevel();
 
@@ -28,8 +31,10 @@ namespace LCEServer
         static void Log(LogLevel level, const char* category, const char* fmt, va_list args);
         static const char* LevelToString(LogLevel level);
         static const char* LevelToColor(LogLevel level);
+        static void RotateLatestLog();
 
         static LogLevel s_level;
         static std::mutex s_mutex;
+        static FILE* s_logFile;
     };
 }

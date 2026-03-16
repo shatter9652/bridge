@@ -78,6 +78,7 @@ namespace LCEServer
             }
 
             m_connections.erase(it);
+
             m_tcp->CloseConnection(id);
             m_tcp->PushFreeSmallId(id);
         }
@@ -215,14 +216,12 @@ namespace LCEServer
                     "Player '%ls' joined the game",
                     joined->GetPlayerName().c_str());
 
-                // Chat join message
+                // Chat join message — send AFTER AddPlayer so the client
+                // has the entity registered before the chat references them.
                 auto chatPkt = PacketHandler::WriteChatJoinMessage(
                     joined->GetPlayerName());
-                for (auto& [id, other] : m_connections)
-                    if (other->IsPlaying())
-                        other->SendPacket(chatPkt);
 
-                // Tell all existing players about the new arrival
+                // Tell all existing players about the new arrival first
                 auto addNew = PacketHandler::WriteAddPlayer(
                     joined->GetEntityId(),
                     joined->GetPlayerName(),
@@ -235,6 +234,11 @@ namespace LCEServer
                 for (auto& [id, other] : m_connections)
                     if (other.get() != joined && other->IsPlaying())
                         other->SendPacket(addNew);
+
+                // Chat join — send AFTER AddPlayer so the client has the entity
+                for (auto& [id, other] : m_connections)
+                    if (other->IsPlaying())
+                        other->SendPacket(chatPkt);
 
                 // Tell the new player about everyone already online
                 for (auto& [id, other] : m_connections)
@@ -266,16 +270,40 @@ namespace LCEServer
                             other->SendPacket(pkt);
                 };
 
-            // Wire block update broadcast
+            // Wire block update broadcast.
+            // Matches PlayerConnection::handlePlayerAction + ServerPlayerGameMode::destroyBlock
+            // in the reference source: the only replication to other clients is a
+            // TileUpdatePacket (id=53) sent to every player that has this chunk visible.
+            // BlockRegionUpdate (id=51) is a streaming-only packet — never used for
+            // incremental block updates in the real server.
             conn->onBlockUpdate =
                 [this](Connection* src,
                        int x, int y, int z,
                        int blockId, int blockData) {
+                    int cx = x >> 4;
+                    int cz = z >> 4;
+                    // When a block is broken (blockId==0), send 255 instead of 0.
+                    // handleTileUpdate in the client uses block==255 as a signal to call
+                    // destroyingTileAt() on the level renderer before applying the change,
+                    // which triggers a chunk mesh rebuild for watching clients.
+                    // Without this the world data updates silently but the block stays visible.
+                    // See ClientConnection::handleTileUpdate in the reference source.
+                    int wireBlockId = (blockId == 0) ? 255 : blockId;
                     auto pkt = PacketHandler::WriteTileUpdate(
-                        x, y, z, blockId, blockData, 0);
+                        x, y, z, wireBlockId, blockData, 0);
                     for (auto& [id, other] : m_connections)
-                        if (other->IsPlaying())
-                            other->SendPacket(pkt);
+                    {
+                        if (other.get() == src || !other->IsPlaying())
+                            continue;
+                        bool vis = other->HasChunkVisible(cx, cz);
+                        Logger::Debug("Server",
+                            "TileUpdate (%d,%d,%d) blk=%d -> '%ls' chunk(%d,%d) %s",
+                            x, y, z, blockId,
+                            other->GetPlayerName().c_str(), cx, cz,
+                            vis ? "SENT" : "skip(not loaded)");
+                        if (!vis) continue;
+                        other->SendPacket(pkt);
+                    }
                 };
 
             // P2: Wire movement broadcast callback
@@ -401,90 +429,103 @@ namespace LCEServer
     // ---------------------------------------------------------------
     // P2: OnPlayerMoved — broadcast entity movement to all other clients
     //
-    // Uses delta thresholds to pick the right packet:
-    //   • No position change → EntityLook (33) only
-    //   • Small delta (< 4 blocks) + rotation → EntityMoveLook (32)
-    //   • Small delta, no rotation change    → EntityMove (31)
-    //   • Large delta (≥ 4 blocks)           → EntityTeleport (34)
-    // Always follows up with EntityHeadRot (35) so the head yaw is correct.
-    //
-    // Called from Connection::HandleMovePlayer inside ConnectionManager's
-    // Tick loop — m_mutex is already held by the caller.
+    // Matches TrackedEntity::tick() from the reference source exactly:
+    //   1. Positions tracked as integer fixed-point (Mth::floor(x * 32))
+    //   2. Deltas computed as integers, not floats — stays in sync with
+    //      the client's integer accumulator (e->xp += packet->xa)
+    //   3. Teleport if any delta overflows a signed byte (-128..127)
+    //   4. Uses the same packet selection logic as TrackedEntity
     // ---------------------------------------------------------------
     void ConnectionManager::OnPlayerMoved(Connection* mover)
     {
-        // Threshold: EntityMove/MoveLook only if delta fits in a signed byte
-        // at *32 precision (max representable: ±3.96875 blocks).
-        // We use 3.9 to stay safely inside that range.
-        constexpr double TELEPORT_THRESHOLD = 3.9;
-
-        double dx = 0, dy = 0, dz = 0;
-        bool posChanged = false;
-        bool rotChanged = false;
-
-        if (mover->IsLastSentValid())
+        if (!mover->IsLastSentValid())
         {
-            double lx, ly, lz;
-            mover->GetLastSentPos(lx, ly, lz);
-            dx = mover->GetX() - lx;
-            dy = mover->GetY() - ly;
-            dz = mover->GetZ() - lz;
-
-            posChanged = (std::abs(dx) > 0.001 ||
-                          std::abs(dy) > 0.001 ||
-                          std::abs(dz) > 0.001);
-
-            // Rotation changed if packed byte differs from last sent
-            auto packAngle = [](float f) -> uint8_t {
-                return (uint8_t)(int)(f * 256.0f / 360.0f);
-            };
-            // We don't store m_lastSentYRot in the getter yet — compare using
-            // yRot/xRot directly; ConnectionManager sets them via SetLastSentPos.
-            // For now treat any non-zero rot-only movement as changed.
-            rotChanged = true; // always send rot; EntityLook is cheap
-        }
-        else
-        {
-            // First movement packet — treat as teleport
-            posChanged = true;
-            rotChanged = true;
-        }
-
-        bool largeMove = (std::abs(dx) >= TELEPORT_THRESHOLD ||
-                          std::abs(dy) >= TELEPORT_THRESHOLD ||
-                          std::abs(dz) >= TELEPORT_THRESHOLD);
-
-        std::vector<uint8_t> movePkt;
-        if (!posChanged && !rotChanged)
-            return; // nothing to broadcast
-
-        if (!posChanged)
-        {
-            movePkt = PacketHandler::WriteEntityLook(
+            // First movement — always teleport to establish the accumulator baseline
+            auto movePkt = PacketHandler::WriteEntityTeleport(
                 mover->GetEntityId(),
+                mover->GetX(), mover->GetY(), mover->GetZ(),
                 mover->GetYRot(), mover->GetXRot());
+            auto headPkt = PacketHandler::WriteEntityHeadRot(
+                mover->GetEntityId(), mover->GetYRot());
+            for (auto& [id, conn] : m_connections)
+            {
+                if (conn.get() == mover || !conn->IsPlaying()) continue;
+                conn->SendPacket(movePkt);
+                conn->SendPacket(headPkt);
+            }
+            mover->SetLastSentPos(
+                mover->GetX(), mover->GetY(), mover->GetZ(),
+                mover->GetYRot(), mover->GetXRot());
+            return;
         }
-        else if (largeMove || !mover->IsLastSentValid())
+
+        // --- Integer fixed-point delta (matches TrackedEntity::tick) ---
+        int32_t xp_last, yp_last, zp_last;
+        mover->GetLastSentPosFixed(xp_last, yp_last, zp_last);
+
+        int32_t xn = (int32_t)std::floor(mover->GetX() * 32.0);
+        int32_t yn = (int32_t)std::floor(mover->GetY() * 32.0);
+        int32_t zn = (int32_t)std::floor(mover->GetZ() * 32.0);
+
+        int xa = xn - xp_last;
+        int ya = yn - yp_last;
+        int za = zn - zp_last;
+
+        bool posChanged = (xa != 0 || ya != 0 || za != 0);
+        // Teleport if any component overflows a signed byte
+        bool largeMove   = (xa < -128 || xa >= 128 ||
+                            ya < -128 || ya >= 128 ||
+                            za < -128 || za >= 128);
+
+        // --- Rotation deltas (same fixed-point approach) ---
+        int32_t yRotp_last, xRotp_last;
+        mover->GetLastSentRotFixed(yRotp_last, xRotp_last);
+
+        int yRotn = (int32_t)std::floor(mover->GetYRot() * 256.0f / 360.0f);
+        int xRotn = (int32_t)std::floor(mover->GetXRot() * 256.0f / 360.0f);
+        int yRota = yRotn - yRotp_last;
+        int xRota = xRotn - xRotp_last;
+        // Wrap to signed byte range (-128..127), matching TrackedEntity source
+        while (yRota >  127) yRota -= 256;
+        while (yRota < -128) yRota += 256;
+        while (xRota >  127) xRota -= 256;
+        while (xRota < -128) xRota += 256;
+        int8_t yRotDelta = (int8_t)yRota;
+        int8_t xRotDelta = (int8_t)xRota;
+        bool rotChanged  = (yRota != 0 || xRota != 0);
+
+        if (!posChanged && !rotChanged)
+            return;
+
+        // --- Select packet (matches TrackedEntity packet selection) ---
+        std::vector<uint8_t> movePkt;
+        if (largeMove)
         {
             movePkt = PacketHandler::WriteEntityTeleport(
                 mover->GetEntityId(),
                 mover->GetX(), mover->GetY(), mover->GetZ(),
                 mover->GetYRot(), mover->GetXRot());
         }
-        else if (rotChanged)
+        else if (posChanged && rotChanged)
         {
             movePkt = PacketHandler::WriteEntityMoveLook(
                 mover->GetEntityId(),
-                dx, dy, dz,
-                mover->GetYRot(), mover->GetXRot());
+                (int8_t)xa, (int8_t)ya, (int8_t)za,
+                yRotDelta, xRotDelta);
         }
-        else
+        else if (posChanged)
         {
             movePkt = PacketHandler::WriteEntityMove(
-                mover->GetEntityId(), dx, dy, dz);
+                mover->GetEntityId(),
+                (int8_t)xa, (int8_t)ya, (int8_t)za);
+        }
+        else // rotChanged only
+        {
+            movePkt = PacketHandler::WriteEntityLook(
+                mover->GetEntityId(), yRotDelta, xRotDelta);
         }
 
-        // EntityHeadRot keeps head yaw in sync with body
+        // EntityHeadRot keeps head yaw in sync with body yaw
         auto headPkt = PacketHandler::WriteEntityHeadRot(
             mover->GetEntityId(), mover->GetYRot());
 
@@ -496,7 +537,7 @@ namespace LCEServer
             conn->SendPacket(headPkt);
         }
 
-        // Update last-sent snapshot
+        // Update snapshot — SetLastSentPos updates both float AND fixed-point
         mover->SetLastSentPos(
             mover->GetX(), mover->GetY(), mover->GetZ(),
             mover->GetYRot(), mover->GetXRot());

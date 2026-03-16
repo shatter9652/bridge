@@ -136,7 +136,16 @@ vector<shared_ptr<SynchedEntityData::DataItem> > *AddPlayerPacket::getUnpackedDa
 {
 	if (unpack == nullptr)
 	{
-		unpack = entityData->getAll();
+		if (entityData == nullptr)
+		{
+			// Incoming packet with no entity data — return empty vector
+			// so handleAddPlayer skips assignValues without crashing.
+			unpack = new vector<shared_ptr<SynchedEntityData::DataItem> >();
+		}
+		else
+		{
+			unpack = entityData->getAll();
+		}
 	}
 	return unpack;
 }

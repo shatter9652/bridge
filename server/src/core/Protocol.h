@@ -47,12 +47,13 @@ namespace LCEServer
         constexpr int PlayerCommand   = 19;
         constexpr int EntityEvent     = 38;  // EntityEventPacket — was wrongly 17 (that's EntityActionAtPositionPacket)
         constexpr int AddPlayer       = 20;
-        constexpr int EntityMove      = 31; // relative pos delta
-        constexpr int EntityMoveLook  = 32; // relative pos + rot
-        constexpr int EntityLook      = 33; // rotation only
+        constexpr int EntityMove      = 31; // relative pos delta (MoveEntityPacket::Pos)
+        constexpr int EntityLook      = 32; // rotation only (MoveEntityPacket::Rot)
+        constexpr int EntityMoveLook  = 33; // relative pos + rot (MoveEntityPacket::PosRot)
         constexpr int EntityTeleport  = 34; // absolute pos + rot
         constexpr int EntityHeadRot   = 35; // head yaw only
         constexpr int RemoveEntities  = 29;
+        constexpr int DebugOptions    = 152;
 
         // ClientCommandPacket (id=205) client->server
         // action byte: 0=LOGIN_COMPLETE, 1=PERFORM_RESPAWN
@@ -67,6 +68,8 @@ namespace LCEServer
         constexpr int ChunkVisibility = 50;
         constexpr int BlockRegionUpdate = 51;
         constexpr int TileUpdate      = 53;
+        constexpr int ContainerClose  = 101;
+        constexpr int SetCreativeModeSlot = 107;
         constexpr int GameEvent           = 70;
         constexpr int ChunkVisibilityArea = 155; // 4J batch visibility packet (S->C on login)
         constexpr int PlayerAbilities     = 202;

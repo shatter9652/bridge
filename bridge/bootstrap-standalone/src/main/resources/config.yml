@@ -1,0 +1,50 @@
+# ============================================================
+# LCEBridge Configuration
+# ============================================================
+
+lce:
+  address: 0.0.0.0
+  port: 25565
+  motd: "LCEBridge Server"
+  max-players: 0
+
+remote:
+  address: 127.0.0.1
+  port: 25566
+  # online, offline, floodgate
+  auth-type: offline
+
+floodgate:
+  key-file: key.pem
+  username-prefix: "."
+
+world:
+  world-size-limit: 0
+  negative-y-handling: clamp
+  view-distance: 0
+  chunks-per-tick: 10
+
+inventory:
+  show-translated-names: true
+  show-translated-lore: true
+  lce-crafting-ui: true
+
+performance:
+  chunk-translation-threads: 0
+  chunk-cache-enabled: true
+  chunk-cache-size: 256
+  async-compression: true
+
+logging:
+  level: info
+  log-packets: false
+  log-translation-failures: true
+  packet-dump-enabled: false
+  packet-dump-directory: dumps/
+
+advanced:
+  lan-broadcast: true
+  lan-broadcast-port: 25566
+  login-timeout: 600
+  connection-timeout: 1200
+  debug-scoreboard: false

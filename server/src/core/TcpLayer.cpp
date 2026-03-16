@@ -193,7 +193,7 @@ namespace LCEServer
     {
         if (sock == INVALID_SOCKET || dataSize <= 0) return false;
 
-        // 4-byte big-endian length header (matches WinsockNetLayer)
+        // 4-byte big-endian length header (matches WinsockNetLayer) (matches WinsockNetLayer)
         uint8_t header[4];
         header[0] = (uint8_t)((dataSize >> 24) & 0xFF);
         header[1] = (uint8_t)((dataSize >> 16) & 0xFF);

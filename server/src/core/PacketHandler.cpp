@@ -883,8 +883,20 @@ namespace LCEServer
         w.writeInt((int32_t)skinId);
         w.writeInt((int32_t)capeId);
         w.writeInt((int32_t)privileges);
-        // SynchedEntityData::packAll with no entries — just the end sentinel
-        w.writeByte(0x7F);
+
+        // SynchedEntityData: must send at least one item so that
+        // SynchedEntityData::unpack() returns a non-null vector.
+        // If we send bare 0x7F (no items), unpack returns nullptr,
+        // and AddPlayerPacket::getUnpackedData() then calls
+        // entityData->getAll() — but entityData is nullptr on the
+        // received packet, causing a crash.
+        //
+        // We send only id=0 (Entity shared flags, BYTE=0) which is
+        // defined on every Entity/LivingEntity/RemotePlayer.
+        // header = ((type=0 << 5) | (id=0 & 0x1F)) & 0xFF = 0x00
+        w.writeByte(0x00); // header: TYPE_BYTE, id=0
+        w.writeByte(0);    // value: shared flags = 0
+        w.writeByte(0x7F); // EOF
         return w.data();
     }
 
@@ -923,54 +935,55 @@ namespace LCEServer
         return (int8_t)v;
     }
 
-    // EntityMovePacket (id=31) — relative position delta, no rotation
-    // Wire: [byte 31][int entityId][byte dx*32][byte dy*32][byte dz*32]
+    // EntityMovePacket::Pos (id=31) — relative position delta, no rotation
+    // Wire: [byte 31][short entityId][byte xa][byte ya][byte za]
+    // xa/ya/za are floor(newPos*32) - floor(lastPos*32) — integer fixed-point deltas.
     std::vector<uint8_t> PacketHandler::WriteEntityMove(
-        int entityId, double dx, double dy, double dz)
+        int entityId, int8_t xa, int8_t ya, int8_t za)
     {
         ByteWriter w;
         w.writeByte(PacketId::EntityMove);
-        w.writeInt(entityId);
-        w.writeByte((uint8_t)PackDelta(dx));
-        w.writeByte((uint8_t)PackDelta(dy));
-        w.writeByte((uint8_t)PackDelta(dz));
+        w.writeShort((int16_t)entityId);
+        w.writeByte((uint8_t)xa);
+        w.writeByte((uint8_t)ya);
+        w.writeByte((uint8_t)za);
         return w.data();
     }
 
-    // EntityMoveLookPacket (id=32) — relative pos + rotation
-    // Wire: [byte 32][int entityId][byte dx*32][byte dy*32][byte dz*32]
-    //       [byte yRot/360*256][byte xRot/360*256]
+    // EntityMovePacket::PosRot (id=33) — relative pos + rotation
+    // Wire: [byte 33][short entityId][byte xa][byte ya][byte za]
+    //       [byte yRotDelta][byte xRotDelta]
     std::vector<uint8_t> PacketHandler::WriteEntityMoveLook(
-        int entityId, double dx, double dy, double dz,
-        float yRot, float xRot)
+        int entityId, int8_t xa, int8_t ya, int8_t za,
+        int8_t yRotDelta, int8_t xRotDelta)
     {
         ByteWriter w;
         w.writeByte(PacketId::EntityMoveLook);
-        w.writeInt(entityId);
-        w.writeByte((uint8_t)PackDelta(dx));
-        w.writeByte((uint8_t)PackDelta(dy));
-        w.writeByte((uint8_t)PackDelta(dz));
-        w.writeByte(PackAngle(yRot));
-        w.writeByte(PackAngle(xRot));
+        w.writeShort((int16_t)entityId);
+        w.writeByte((uint8_t)xa);
+        w.writeByte((uint8_t)ya);
+        w.writeByte((uint8_t)za);
+        w.writeByte((uint8_t)yRotDelta);
+        w.writeByte((uint8_t)xRotDelta);
         return w.data();
     }
 
-    // EntityLookPacket (id=33) — rotation only, no position
-    // Wire: [byte 33][int entityId][byte yRot/360*256][byte xRot/360*256]
+    // EntityMovePacket::Rot (id=32) — rotation only, no position
+    // Wire: [byte 32][short entityId][byte yRot/360*256][byte xRot/360*256]
     std::vector<uint8_t> PacketHandler::WriteEntityLook(
-        int entityId, float yRot, float xRot)
+        int entityId, int8_t yRotDelta, int8_t xRotDelta)
     {
         ByteWriter w;
         w.writeByte(PacketId::EntityLook);
-        w.writeInt(entityId);
-        w.writeByte(PackAngle(yRot));
-        w.writeByte(PackAngle(xRot));
+        w.writeShort((int16_t)entityId);
+        w.writeByte((uint8_t)yRotDelta);
+        w.writeByte((uint8_t)xRotDelta);
         return w.data();
     }
 
     // EntityTeleportPacket (id=34) — absolute position + rotation
     // Used when delta exceeds ±4 blocks (won't fit in a signed byte at *32)
-    // Wire: [byte 34][int entityId][int x*32][int y*32][int z*32]
+    // Wire: [byte 34][short entityId][int x*32][int y*32][int z*32]
     //       [byte yRot/360*256][byte xRot/360*256]
     std::vector<uint8_t> PacketHandler::WriteEntityTeleport(
         int entityId, double x, double y, double z,
@@ -978,7 +991,7 @@ namespace LCEServer
     {
         ByteWriter w;
         w.writeByte(PacketId::EntityTeleport);
-        w.writeInt(entityId);
+        w.writeShort((int16_t)entityId);
         w.writeInt((int32_t)std::floor(x * 32.0));
         w.writeInt((int32_t)std::floor(y * 32.0));
         w.writeInt((int32_t)std::floor(z * 32.0));

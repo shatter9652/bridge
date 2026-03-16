@@ -47,6 +47,9 @@ int main(int argc, char* argv[])
         LCEServer::NETWORK_PROTOCOL_VERSION);
     std::printf("\n");
 
+    // Initialize file logging (logs/latest.log + gzip rotation)
+    LCEServer::Logger::Initialize();
+
     // Register Ctrl+C handler
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
@@ -56,6 +59,7 @@ int main(int argc, char* argv[])
     if (!server.Start())
     {
         LCEServer::Logger::Error("Server", "Failed to start server");
+        LCEServer::Logger::Shutdown();
         return 1;
     }
 
@@ -63,5 +67,6 @@ int main(int argc, char* argv[])
     server.Run();
 
     g_server = nullptr;
+    LCEServer::Logger::Shutdown();
     return 0;
 }

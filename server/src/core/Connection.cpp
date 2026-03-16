@@ -133,6 +133,16 @@ namespace LCEServer
                 if (m_state == ConnectionState::Playing)
                     HandleMovePlayer(id, pkt.data(), (int)pkt.size());
                 break;
+            case PacketId::DebugOptions:
+                // Optional client packet used by debug/crafting flows in LCE.
+                // Dedicated server currently has no gameplay effect for it.
+                break;
+            case PacketId::ContainerClose:
+                // Client notifies container/window close; safe no-op for now.
+                break;
+            case PacketId::SetCreativeModeSlot:
+                // Creative inventory update packet; ignored until inventory sync is implemented.
+                break;
             case PacketId::Disconnect:
                 Logger::Info("Server", "Client %d sent disconnect",
                              m_smallId);
@@ -278,6 +288,12 @@ namespace LCEServer
 
         // Resolve primary XUID — same logic as PendingConnection
         // "Guests use the online xuid, everyone else uses the offline one"
+        // Update player name from the Login packet's userName field.
+        // PreLogin only gives us the loginKey (gamertag); the canonical
+        // in-game name comes from LoginPacket::userName.
+        if (!pkt.userName.empty())
+            m_playerName = pkt.userName;
+
         m_primaryXuid = pkt.offlineXuid;
         if (m_primaryXuid == INVALID_XUID)
             m_primaryXuid = pkt.onlineXuid;
@@ -344,10 +360,11 @@ namespace LCEServer
         Logger::Info("Server", "Player '%ls' logged in (smallId=%d, gameMode=%d)",
                      m_playerName.c_str(), m_smallId, m_gameMode);
         m_entityId  = (int)m_smallId * 100 + 1;
-        // Use the gameType the client reported — this is what the world was
-        // saved with and what the client will actually run (survival/creative).
-        // The world config gamemode is a server default; the client's value wins.
-        m_gameMode  = pkt.gameType;
+        // Use the server-authoritative gameMode (what we send in the login response)
+        // rather than pkt.gameType (what the client reported — it may be stale from
+        // a previous session). This keeps m_gameMode in sync with what the client
+        // will actually be in after receiving our LoginResponse.
+        m_gameMode  = m_world ? m_world->GetGameMode() : m_config->gamemode;
         SendLoginResponse();
         m_state = ConnectionState::Playing;
         m_wasPlaying = true;
@@ -763,8 +780,11 @@ namespace LCEServer
 
     // ---------------------------------------------------------------
     // HandlePlayerAction — client breaking a block
-    // action=2 (STOP_DESTROY_BLOCK) is the confirmed break event.
-    // We zero the block, rebuild lighting, and broadcast TileUpdate.
+    // Matches ServerPlayerGameMode::startDestroyBlock /
+    // stopDestroyBlock from the reference source:
+    //   Creative (m_gameMode==1): break immediately on START (action=0)
+    //   Survival:                 break only on STOP (action=2)
+    //   Abort (action=1):         no world mutation in either mode
     // ---------------------------------------------------------------
     void Connection::HandlePlayerAction(const uint8_t* data, int size)
     {
@@ -772,13 +792,20 @@ namespace LCEServer
         if (!PacketHandler::ReadPlayerAction(data, size, act))
             return;
 
-        // Only act on the final break confirmation, not START/ABORT
-        if (act.action != 2) // STOP_DESTROY_BLOCK = 2
+        Logger::Debug("Server", "PlayerAction '%ls' action=%d pos=(%d,%d,%d) face=%d",
+            m_playerName.c_str(), act.action, act.x, act.y, act.z, act.face);
+
+        bool isCreative = (m_gameMode == 1);
+
+        // Creative: break on START_DESTROY (action=0) — instant break
+        // Survival: break on STOP_DESTROY  (action=2) — animation completed
+        // All other actions (abort=1, drop=3...) don't mutate the world
+        bool shouldBreak = (isCreative && act.action == 0) ||
+                           (!isCreative && act.action == 2);
+        if (!shouldBreak)
             return;
 
         if (!m_world) return;
-
-        // Sanity: y must be valid
         if (act.y < 0 || act.y > 255) return;
 
         ChunkData* chunk = m_world->SetBlock(act.x, act.y, act.z, 0, 0);
@@ -787,7 +814,6 @@ namespace LCEServer
         Logger::Info("Server", "'%ls' broke block at (%d,%d,%d)",
             m_playerName.c_str(), act.x, act.y, act.z);
 
-        // Broadcast to all connections via ConnectionManager callback
         if (onBlockUpdate)
             onBlockUpdate(this, act.x, act.y, act.z, 0, 0);
     }
