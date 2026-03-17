@@ -1,0 +1,44 @@
+name: Build Bridge
+
+on:
+  push:
+    paths:
+      - "bridge/**"
+      - ".github/workflows/build-bridge.yml"
+  pull_request:
+    paths:
+      - "bridge/**"
+      - ".github/workflows/build-bridge.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Build with Gradle wrapper
+        working-directory: bridge
+        run: gradlew.bat build
+
+      - name: Upload JAR artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-jars
+          path: |
+            bridge\build\libs\*.jar
+            bridge\**\build\libs\*.jar
+          if-no-files-found: error
