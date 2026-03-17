@@ -35,6 +35,19 @@ public class ConfigLoader {
             cfg.negativeYHandling = str(world,     "negative-y-handling", cfg.negativeYHandling);
             cfg.viewDistance      = integer(world, "view-distance",        cfg.viewDistance);
             cfg.chunksPerTick     = integer(world, "chunks-per-tick",      cfg.chunksPerTick);
+
+            Map<String, Object> performance = section(root, "performance");
+            cfg.chunkTranslationThreads = integer(performance, "chunk-translation-threads", cfg.chunkTranslationThreads);
+            cfg.chunkCacheEnabled       = bool(performance, "chunk-cache-enabled", cfg.chunkCacheEnabled);
+            cfg.chunkCacheSize          = integer(performance, "chunk-cache-size", cfg.chunkCacheSize);
+            cfg.asyncCompression        = bool(performance, "async-compression", cfg.asyncCompression);
+
+            Map<String, Object> logging = section(root, "logging");
+            cfg.logLevel            = str(logging, "level", cfg.logLevel);
+            cfg.logPackets          = bool(logging, "log-packets", cfg.logPackets);
+            cfg.logTranslationFails = bool(logging, "log-translation-failures", cfg.logTranslationFails);
+            cfg.packetDumpEnabled   = bool(logging, "packet-dump-enabled", cfg.packetDumpEnabled);
+            cfg.packetDumpDirectory = str(logging, "packet-dump-directory", cfg.packetDumpDirectory);
         }
         return cfg;
     }
@@ -53,5 +66,10 @@ public class ConfigLoader {
     private static int integer(Map<String, Object> m, String key, int def) {
         Object v = m == null ? null : m.get(key);
         return v instanceof Number ? ((Number) v).intValue() : def;
+    }
+
+    private static boolean bool(Map<String, Object> m, String key, boolean def) {
+        Object v = m == null ? null : m.get(key);
+        return v instanceof Boolean ? (Boolean) v : def;
     }
 }

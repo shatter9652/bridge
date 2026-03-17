@@ -1,6 +1,6 @@
 dependencies {
     // MCProtocolLib — Java Edition protocol (1.21.4)
-    implementation("org.geysermc.mcprotocollib:protocol:1.21.7-1")
+    implementation("org.geysermc.mcprotocollib:protocol:1.21.11-SNAPSHOT")
 
     // Netty — LCE TCP frontend
     implementation("io.netty:netty-all:4.1.115.Final")

@@ -2,6 +2,7 @@ package dev.banditvault.lcebridge.core.network.lce;
 
 import dev.banditvault.lcebridge.core.BridgeConfig;
 import dev.banditvault.lcebridge.core.session.LceBridgeSession;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,7 @@ import org.slf4j.LoggerFactory;
  */
 public class LceChannelHandler extends SimpleChannelInboundHandler<LcePacket> {
     private static final Logger log = LoggerFactory.getLogger(LceChannelHandler.class);
+    private static final byte BRIDGE_ASSIGNED_SMALL_ID = 1;
 
     private final BridgeConfig config;
 
@@ -23,8 +25,17 @@ public class LceChannelHandler extends SimpleChannelInboundHandler<LcePacket> {
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
         log.info("LCE client connected: {}", ctx.channel().remoteAddress());
+
+        // Win64 LAN transport expects a raw 1-byte small-id assignment right after TCP connect,
+        // before any [length][packet] LCE frames. Without this, the first frame byte is consumed
+        // as small-id and the packet stream becomes misaligned.
+        ByteBuf assign = ctx.alloc().buffer(1);
+        assign.writeByte(BRIDGE_ASSIGNED_SMALL_ID);
+        ctx.writeAndFlush(assign);
+
         LceBridgeSession session = new LceBridgeSession(config, ctx.channel());
         ctx.channel().attr(LceBridgeServer.SESSION_KEY).set(session);
+        session.sendServerPreLogin(); // server speaks first
     }
 
     @Override

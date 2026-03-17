@@ -1,5 +1,6 @@
 plugins {
     application
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 dependencies {
@@ -13,11 +14,10 @@ application {
     mainClass.set("dev.banditvault.lcebridge.standalone.BridgeMain")
 }
 
-tasks.jar {
+tasks.shadowJar {
     manifest {
         attributes["Main-Class"] = "dev.banditvault.lcebridge.standalone.BridgeMain"
     }
-    // Fat jar — bundle all runtime deps
-    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    archiveClassifier.set("")
+    mergeServiceFiles()
 }

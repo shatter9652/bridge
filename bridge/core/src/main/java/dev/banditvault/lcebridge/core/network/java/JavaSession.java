@@ -6,6 +6,7 @@ import org.geysermc.mcprotocollib.network.event.session.*;
 import org.geysermc.mcprotocollib.network.factory.ClientNetworkSessionFactory;
 import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.network.session.ClientNetworkSession;
+import org.geysermc.mcprotocollib.protocol.MinecraftConstants;
 import org.geysermc.mcprotocollib.protocol.MinecraftProtocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +17,7 @@ public class JavaSession {
     private static final Logger log = LoggerFactory.getLogger(JavaSession.class);
 
     private final BridgeConfig config;
-    private final String username;
+    private String username;
     private ClientNetworkSession session;
     private Consumer<Packet> packetHandler;
     private Runnable disconnectHandler;
@@ -28,6 +29,7 @@ public class JavaSession {
 
     public void setPacketHandler(Consumer<Packet> h)  { this.packetHandler   = h; }
     public void setDisconnectHandler(Runnable h)       { this.disconnectHandler = h; }
+    public void setUsername(String name)               { this.username = name; }
 
     public void connect() {
         MinecraftProtocol protocol = new MinecraftProtocol(username);
@@ -35,6 +37,10 @@ public class JavaSession {
             .setAddress(config.remoteAddress, config.remotePort)
             .setProtocol(protocol)
             .create();
+
+        // Tell MCProtocolLib's ClientListener to auto-reply to SelectKnownPacks
+        // with an empty list — required or the server never sends FinishConfiguration.
+        session.setFlag(MinecraftConstants.SEND_BLANK_KNOWN_PACKS_RESPONSE, true);
 
         session.addListener(new SessionAdapter() {
             @Override public void packetReceived(Session s, Packet p) {

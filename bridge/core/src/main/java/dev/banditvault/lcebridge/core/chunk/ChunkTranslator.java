@@ -36,13 +36,13 @@ public class ChunkTranslator {
 
             // Sections 0-3 = Y -64 to -1 (below LCE world), 4-19 = Y 0-255, 20-23 = Y 256-319
             for (int si = 0; si < SECTION_COUNT && buf.isReadable(); si++) {
-                ChunkSection section = MinecraftTypes.readChunkSection(buf);
+                ChunkSection section = MinecraftTypes.readChunkSection(buf, 15, 3);
                 if (section == null) continue;
 
                 int baseY = (si - 4) * 16; // LCE Y base (negative for si < 4)
                 if (baseY < 0 || baseY > 240) continue; // outside LCE 0-255
 
-                DataPalette blocks = section.getChunkData();
+                DataPalette blocks = section.getBlockData();
                 for (int ly = 0; ly < 16; ly++) {
                     int lceY = baseY + ly;
                     if (lceY > 255) break;
@@ -71,12 +71,20 @@ public class ChunkTranslator {
             session.sendLce(vis);
 
             BlockRegionUpdatePacket bru = new BlockRegionUpdatePacket();
-            bru.chunkX = cx; bru.chunkZ = cz;
+            bru.x = cx << 4;   // chunk x to world x
+            bru.y = 0;
+            bru.z = cz << 4;   // chunk z to world z
+            bru.xs = 16;
+            bru.ys = 256;      // full height column
+            bru.zs = 16;
+            bru.levelIdx = 0;  // overworld
+            bru.isFullChunk = true;
             bru.compressedData = comp;
+            log.debug("Translated chunk ({},{}) → {} bytes compressed", cx, cz, comp.length);
             session.sendLce(bru);
 
         } catch (Exception e) {
-            log.warn("Chunk translation failed ({},{}): {}", cx, cz, e.getMessage());
+            log.warn("Chunk translation failed ({},{}): ", cx, cz, e);
             // Send an empty air chunk so the client doesn't hang
             sendAirChunk(cx, cz, session);
         }
@@ -90,7 +98,15 @@ public class ChunkTranslator {
             vis.chunkX = cx; vis.chunkZ = cz; vis.visible = true;
             session.sendLce(vis);
             BlockRegionUpdatePacket bru = new BlockRegionUpdatePacket();
-            bru.chunkX = cx; bru.chunkZ = cz; bru.compressedData = comp;
+            bru.x = cx << 4;
+            bru.y = 0;
+            bru.z = cz << 4;
+            bru.xs = 16;
+            bru.ys = 256;
+            bru.zs = 16;
+            bru.levelIdx = 0;
+            bru.isFullChunk = true;
+            bru.compressedData = comp;
             session.sendLce(bru);
         } catch (Exception ignored) {}
     }

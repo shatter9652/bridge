@@ -3475,6 +3475,11 @@ void ClientConnection::handleLevelEvent(shared_ptr<LevelEventPacket> packet)
 
 void ClientConnection::handleAwardStat(shared_ptr<AwardStatPacket> packet)
 {
+	if (minecraft == nullptr || m_userIndex < 0 || m_userIndex >= XUSER_MAX_COUNT || minecraft->localplayers[m_userIndex] == nullptr)
+	{
+		return;
+	}
+
 	minecraft->localplayers[m_userIndex]->awardStatFromServer(GenericStats::stat(packet->statId), packet->getParamData());
 }
 

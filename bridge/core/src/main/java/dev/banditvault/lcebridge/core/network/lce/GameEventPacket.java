@@ -8,7 +8,7 @@ public class GameEventPacket implements LcePacket {
     public static final byte START_RAINING  = 2;
     public static final byte CHANGE_GAMEMODE = 3;
 
-    public byte  reason;
-    public float value;  // e.g. gamemode ID, rain strength
+    public byte reason;
+    public byte param;
     @Override public int getId() { return ID; }
 }

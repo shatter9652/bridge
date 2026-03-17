@@ -1,3 +1,5 @@
 {
-    "cmake.sourceDirectory": "C:/Users/Dan/Documents/Programming/.MinecraftLegacyEdition/server"
+    "cmake.sourceDirectory": "C:/Users/Dan/Documents/Programming/.MinecraftLegacyEdition/server",
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.compile.nullAnalysis.mode": "automatic"
 }

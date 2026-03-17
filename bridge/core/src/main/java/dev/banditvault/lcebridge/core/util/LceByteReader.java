@@ -12,11 +12,12 @@ public class LceByteReader {
 
     public LceByteReader(ByteBuf buf) { this.buf = buf; }
 
-    public byte  readByte()  { return buf.readByte(); }
-    public short readShort() { return buf.readShort(); }
-    public int   readInt()   { return buf.readInt(); }
-    public long  readLong()  { return buf.readLong(); }
-    public float readFloat() { return buf.readFloat(); }
+    public byte  readByte()   { return buf.readByte(); }
+    public short readShort()  { return buf.readShort(); }
+    public int   readInt()    { return buf.readInt(); }
+    public long  readLong()   { return buf.readLong(); }
+    public float readFloat()  { return buf.readFloat(); }
+    public double readDouble() { return buf.readDouble(); }
 
     /** LCE UTF-16 BE string: short len, then len*2 bytes. Returns "" on 0-length. */
     public String readUtf16(int maxLength) {

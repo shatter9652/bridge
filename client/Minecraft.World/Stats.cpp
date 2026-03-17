@@ -553,5 +553,11 @@ void Stats::buildAdditionalStats()
 
 Stat *Stats::get(int key)
 {
-	return statsById->at(key);
+	auto it = statsById->find(key);
+	if (it == statsById->end())
+	{
+		return nullptr;
+	}
+
+	return it->second;
 }

@@ -67,7 +67,7 @@ public class LcePacketWriter {
     private static void writeGameEvent(GameEventPacket p, LceByteWriter w) {
         w.writeByte(GameEventPacket.ID);
         w.writeByte(p.reason);
-        w.writeFloat(p.value);
+        w.writeByte(p.param);
     }
 
     private static void writeSetHealth(SetHealthPacket p, LceByteWriter w) {
@@ -75,11 +75,19 @@ public class LcePacketWriter {
         w.writeFloat(p.health);
         w.writeShort(p.food);
         w.writeFloat(p.saturation);
+        w.writeByte(p.damageSource); // ETelemetryChallenges — required trailing byte
     }
 
     private static void writeChat(ChatPacket p, LceByteWriter w) {
         w.writeByte(ChatPacket.ID);
-        w.writeUtf16(p.message);
+        // Wire: [short messageType][short packedCounts][strings...][ints...]
+        w.writeShort(p.messageType);
+        int sc = p.stringArgs == null ? 0 : p.stringArgs.size();
+        int ic = p.intArgs    == null ? 0 : p.intArgs.size();
+        short packed = (short)(((sc & 0xF) << 4) | (ic & 0xF));
+        w.writeShort(packed);
+        if (p.stringArgs != null) for (String s : p.stringArgs) w.writeUtf16(s);
+        if (p.intArgs    != null) for (int   i : p.intArgs)    w.writeInt(i);
     }
 
     private static void writeChunkVisibility(ChunkVisibilityPacket p, LceByteWriter w) {
@@ -99,11 +107,25 @@ public class LcePacketWriter {
 
     private static void writeBlockRegionUpdate(BlockRegionUpdatePacket p, LceByteWriter w) {
         w.writeByte(BlockRegionUpdatePacket.ID);
-        w.writeInt(p.chunkX);
-        w.writeInt(p.chunkZ);
-        // sizeAndLevel: high bits = level (0), low bits = data length
-        // LCEServer writes: (0 << 17) | compData.length — level 0 = full column
-        w.writeInt(p.compressedData.length);
+        
+        // chunkFlags: bit 0 = isFullChunk, bit 1 = ys==0
+        byte chunkFlags = 0;
+        if (p.isFullChunk) chunkFlags |= 0x01;
+        if (p.ys == 0) chunkFlags |= 0x02;
+        w.writeByte(chunkFlags);
+        
+        w.writeInt(p.x);
+        w.writeShort(p.y);
+        w.writeInt(p.z);
+        w.writeByte((byte)(p.xs - 1));
+        w.writeByte((byte)(p.ys - 1));
+        w.writeByte((byte)(p.zs - 1));
+        
+        // sizeAndLevel: compressed data size in lower 30 bits, levelIdx in upper 2 bits
+        int sizeAndLevel = p.compressedData.length;
+        sizeAndLevel |= (p.levelIdx << 30);
+        w.writeInt(sizeAndLevel);
+        
         w.buffer().writeBytes(p.compressedData);
     }
 }

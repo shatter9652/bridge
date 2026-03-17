@@ -15,6 +15,7 @@ public class LceByteWriter {
     public void writeShort(int v)  { buf.writeShort(v); }
     public void writeInt(int v)    { buf.writeInt(v); }
     public void writeLong(long v)  { buf.writeLong(v); }
+    public void writeDouble(double v) { buf.writeDouble(v); }
     public void writeFloat(float v){ buf.writeFloat(v); }
 
     /** LCE UTF-16 BE string: short len, then len*2 bytes. */
