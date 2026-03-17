@@ -3,11 +3,13 @@ package dev.banditvault.lcebridge.core.session;
 import dev.banditvault.lcebridge.core.BridgeConfig;
 import dev.banditvault.lcebridge.core.network.java.JavaSession;
 import dev.banditvault.lcebridge.core.network.lce.*;
+import dev.banditvault.lcebridge.core.registry.MappingRegistry;
 import io.netty.channel.Channel;
 import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundDisconnectPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundKeepAlivePacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundKeepAlivePacket;
+import org.geysermc.mcprotocollib.protocol.packet.configuration.clientbound.ClientboundRegistryDataPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.*;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.*;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.*;
@@ -31,7 +33,9 @@ import org.geysermc.mcprotocollib.protocol.data.game.setting.ChatVisibility;
 import org.geysermc.mcprotocollib.protocol.data.game.setting.ParticleStatus;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.HandPreference;
 import java.util.BitSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
@@ -50,6 +54,7 @@ public class LceBridgeSession {
     private final AtomicBoolean loggedIn       = new AtomicBoolean(false);
     private final AtomicBoolean spawnFinished  = new AtomicBoolean(false);
     private final AtomicBoolean javaChunkBatchFinished = new AtomicBoolean(false);
+    private final AtomicBoolean firstChunkLogged = new AtomicBoolean(false);
     private ScheduledExecutorService tickEndScheduler;
     private ScheduledExecutorService posHeartbeatScheduler;
     private ScheduledExecutorService chunkSendScheduler;
@@ -58,6 +63,7 @@ public class LceBridgeSession {
     private volatile float  lastKnownYaw = 0, lastKnownPitch = 0;
     private volatile SetTimePacket pendingSetTime;
     private volatile SetHealthPacket pendingSetHealth;
+    private volatile int queuedChunkCount = 0;
 
     private String playerName = "Unknown";
     private long offlineXuid  = 0L, onlineXuid = 0L;
@@ -165,6 +171,7 @@ public class LceBridgeSession {
         switch (pkt) {
             case ClientboundLoginFinishedPacket p           -> log.info("Login phase done");
             case ClientboundFinishConfigurationPacket p     -> log.info("Config phase done");
+            case ClientboundRegistryDataPacket p            -> onJavaRegistryData(p);
             case ClientboundLoginPacket p                   -> onJavaInGameLogin(p);
             case ClientboundKeepAlivePacket p               -> onJavaKeepAlive(p);
             case ClientboundSetHealthPacket p               -> onJavaSetHealth(p);
@@ -299,11 +306,16 @@ public class LceBridgeSession {
 
     private void onJavaChunkData(ClientboundLevelChunkWithLightPacket p) {
         pendingChunks.add(p);
+        queuedChunkCount++;
+        if (firstChunkLogged.compareAndSet(false, true)) {
+            log.info("First Java chunk received at ({},{}), queue={}", p.getX(), p.getZ(), pendingChunks.size());
+        }
     }
 
     private void onJavaChunkBatchFinished(ClientboundChunkBatchFinishedPacket p) {
         javaSession.send(new ServerboundChunkBatchReceivedPacket(10.0f));
         javaChunkBatchFinished.set(true);
+        log.info("Java chunk batch finished: queued={}, pending={}", queuedChunkCount, pendingChunks.size());
 
         // Some servers can finish the initial batch with zero chunk payloads.
         // In that case, complete spawn immediately instead of waiting for queue drain.
@@ -395,6 +407,54 @@ public class LceBridgeSession {
         lceChannel.close();
     }
 
+    private void onJavaRegistryData(ClientboundRegistryDataPacket p) {
+        if (p.getRegistry() == null || !"minecraft:block".equals(p.getRegistry().asString())) {
+            return;
+        }
+
+        int applied = 0;
+        int seenStates = 0;
+        for (var entry : p.getEntries()) {
+            if (entry == null || entry.getData() == null || entry.getId() == null) continue;
+
+            String blockName = entry.getId().asString();
+            Object statesObj = entry.getData().get("states");
+            if (!(statesObj instanceof List<?> states)) continue;
+
+            for (Object s : states) {
+                if (!(s instanceof Map<?, ?> stateMap)) continue;
+                Integer stateId = asInt(stateMap.get("id"));
+                if (stateId == null) continue;
+                seenStates++;
+
+                Map<String, String> props = new HashMap<>();
+                Object propObj = stateMap.get("properties");
+                if (propObj instanceof Map<?, ?> propMap) {
+                    for (Map.Entry<?, ?> pe : propMap.entrySet()) {
+                        if (pe.getKey() == null || pe.getValue() == null) continue;
+                        props.put(String.valueOf(pe.getKey()), String.valueOf(pe.getValue()));
+                    }
+                }
+
+                if (MappingRegistry.blocks().registerRuntimeBlockState(stateId, blockName, props)) {
+                    applied++;
+                }
+            }
+        }
+
+        log.info("Applied {} runtime block mappings from {} registry states", applied, seenStates);
+    }
+
+    private static Integer asInt(Object v) {
+        if (v instanceof Number n) return n.intValue();
+        if (v == null) return null;
+        try {
+            return Integer.parseInt(String.valueOf(v));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private void startClientTickLoop() {
         // No-op: ServerboundClientTickEndPacket is sent in onJavaDelimiter(),
         // exactly once per server tick, triggered by the server's own Delimiter packets.
@@ -414,6 +474,8 @@ public class LceBridgeSession {
     private void startChunkSendLoop() {
         stopChunkSendLoop();
         javaChunkBatchFinished.set(false);
+        firstChunkLogged.set(false);
+        queuedChunkCount = 0;
 
         chunkSendScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "LceBridgeSession-ChunkSend");
@@ -428,6 +490,18 @@ public class LceBridgeSession {
                 log.error("Chunk send loop error", e);
             }
         }, 0, 50, TimeUnit.MILLISECONDS);
+
+        // Safety fallback: don't leave the LCE client on the connection screen forever.
+        // If chunk batching stalls for any reason, force post-chunk spawn after a short grace period.
+        chunkSendScheduler.schedule(() -> {
+            if (!spawnFinished.get() && lceChannel.isActive()) {
+                log.warn("Forcing post-chunk spawn fallback (queued={}, pending={}, batchFinished={})",
+                    queuedChunkCount, pendingChunks.size(), javaChunkBatchFinished.get());
+                if (spawnFinished.compareAndSet(false, true)) {
+                    sendPostChunkSpawn();
+                }
+            }
+        }, 5, TimeUnit.SECONDS);
 
         log.info("Chunk send pacing enabled: {} chunks/tick", Math.max(1, config.chunksPerTick));
     }
